@@ -27,7 +27,11 @@ public class LoadBalancer {
             clientToBackend.start();
             backendToClient.start();
 
-        }
+            } catch (IOException e) {
+                // If a backend server is dead, this prevents the Load Balancer from crashing
+                System.err.println("Failed to connect to backend port " + backendPort);
+                clientSocket.close();
+            }
         }
 
 
