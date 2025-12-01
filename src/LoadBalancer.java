@@ -1,20 +1,23 @@
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 public class LoadBalancer {
+
+    private static final DateTimeFormatter dtf = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     public static void main(String[] args) throws IOException {
         int port = Config.getListenPort();
         String host = Config.getBackendHost();
 
         BackendRegistry registry = new BackendRegistry(Config.getBackendPorts());
-
         startHealthCheck(registry, host);
-
         startStatsMonitor(registry);
 
-        System.out.println("Load Balancer started on port " + port);
+        log("INFO", "Load Balancer engine starting on port " + port);
+        log("INFO", "Strategy: Least Connections");
 
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             while (true) {
@@ -23,19 +26,18 @@ public class LoadBalancer {
                 try {
                     int backendPort = registry.getBestServer();
                     Socket backendSocket = new Socket(host, backendPort);
-                    registry.incrementLoad(backendPort);
 
-                    System.out.println("Routing to " + backendPort);
+                    registry.incrementLoad(backendPort);
+                    log("TRAFFIC", "Routed Client -> Backend:" + backendPort);
 
                     Thread clientToBackend = new Thread(() -> {
                         try {
                             new StreamPipe(clientSocket.getInputStream(), backendSocket.getOutputStream()).run();
                         } catch (IOException e) {
-                            e.printStackTrace();
                         } finally {
-                            registry.decrementLoad(backendPort); // Clean up load
-                            System.out.println("Closed connection to " + backendPort);
-                            try { backendSocket.close(); } catch (IOException e) {}
+                            registry.decrementLoad(backendPort);
+                            log("TRAFFIC", "Closed Session -> Backend:" + backendPort);
+                            closeQuietly(backendSocket);
                         }
                     });
 
@@ -44,7 +46,7 @@ public class LoadBalancer {
                             new StreamPipe(backendSocket.getInputStream(), clientSocket.getOutputStream()).run();
                         } catch (IOException e) {
                         } finally {
-                            try { clientSocket.close(); } catch (IOException e) {}
+                            closeQuietly(clientSocket);
                         }
                     });
 
@@ -52,31 +54,19 @@ public class LoadBalancer {
                     backendToClient.start();
 
                 } catch (Exception e) {
-                    System.err.println("Request failed: " + e.getMessage());
+                    log("ERROR", "Routing failed: " + e.getMessage());
                     clientSocket.close();
                 }
             }
         }
     }
 
-    private static void startHealthCheck(BackendRegistry registry, String host) {
-        new Thread(() -> {
-            while (true) {
-                try {
-                    Thread.sleep(Config.getHealthCheckInterval());
+    public static void log(String level, String message) {
+        System.out.printf("[%s] [%-7s] %s%n", dtf.format(LocalDateTime.now()), level, message);
+    }
 
-                    for (int port : registry.getAllPorts()) {
-                        if (isServerAlive(host, port)) {
-                            registry.markServerUp(port);
-                        } else {
-                            registry.markServerDown(port);
-                        }
-                    }
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-        }).start();
+    private static void closeQuietly(Socket s) {
+        try { if (s != null) s.close(); } catch (IOException e) {}
     }
 
     private static void startStatsMonitor(BackendRegistry registry) {
@@ -84,14 +74,43 @@ public class LoadBalancer {
             while (true) {
                 try {
                     Thread.sleep(Config.getStatsMonitorInterval());
-                    System.out.println(registry.getTotalLoad());
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+
+                    System.out.println("\n");
+                    System.out.println("==================================================");
+                    System.out.println("                SYSTEM REPORT                     ");
+                    System.out.println("==================================================");
+                    System.out.printf("| %-10s | %-10s | %-18s |%n", "PORT", "STATUS", "CONNECTIONS");
+                    System.out.println("--------------------------------------------------");
+
+                    for (int p : registry.getAllPorts()) {
+                        String status = registry.isLive(p) ? "ONLINE" : "OFFLINE";
+                        int count = registry.getActiveConnections(p);
+                        System.out.printf("| %-10d | %-10s | %-18d |%n", p, status, count);
+                    }
+                    System.out.println("==================================================\n");
+
+                } catch (InterruptedException e) { e.printStackTrace(); }
             }
         });
         monitor.setDaemon(true);
         monitor.start();
+    }
+
+    private static void startHealthCheck(BackendRegistry registry, String host) {
+        new Thread(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(Config.getHealthCheckInterval());
+                    for (int port : registry.getAllPorts()) {
+                        if (isServerAlive(host, port)) {
+                            registry.markServerUp(port);
+                        } else {
+                            registry.markServerDown(port);
+                        }
+                    }
+                } catch (InterruptedException e) { e.printStackTrace(); }
+            }
+        }).start();
     }
 
     private static boolean isServerAlive(String host, int port) {

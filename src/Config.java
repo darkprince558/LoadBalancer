@@ -2,24 +2,23 @@ import java.io.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static java.lang.Integer.parseInt;
-
 public class Config {
     private static final Properties properties = new Properties();
+
     static {
-        try {
-            properties.load(new FileInputStream("Config.properties"));
+        try (FileInputStream input = new FileInputStream("Config.properties")) {
+            properties.load(input);
         } catch (IOException e) {
-            e.printStackTrace();
+            System.err.println("Warning: Could not load Config.properties. Using defaults.");
         }
     }
 
     public static int getListenPort() {
-        return parseInt(properties.getProperty("Listen_PORT", "8080"));
+        return Integer.parseInt(properties.getProperty("listen.port", "8080"));
     }
 
     public static String getBackendHost() {
-        return properties.getProperty("BACKEND_HOST", "localhost");
+        return properties.getProperty("backend.host", "localhost");
     }
 
     public static int getHealthCheckInterval() {
@@ -33,7 +32,6 @@ public class Config {
                 .map(Integer::parseInt)
                 .collect(Collectors.toList());
     }
-
 
     public static int getStatsMonitorInterval() {
         return Integer.parseInt(properties.getProperty("stats.monitor.interval", "5000"));

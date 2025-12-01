@@ -16,10 +16,9 @@ public class StreamPipe implements Runnable {
             byte[] buffer = new byte[4096];
             int bytesRead;
 
-            // keep reading until the stream closes
             while ((bytesRead = input.read(buffer)) != -1) {
                 output.write(buffer, 0, bytesRead);
-                output.flush(); //force the data through immediately
+                output.flush();
             }
         } catch (IOException e) {
             System.out.println("Stream closed.");
