@@ -35,10 +35,18 @@ public class LoadBalancer {
                         } finally {
                             registry.decrementLoad(backendPort); // Clean up load
                             System.out.println("Closed connection to " + backendPort);
+                            try { backendSocket.close(); } catch (IOException e) {}
                         }
                     });
 
-                    Thread backendToClient = new Thread(new StreamPipe(backendSocket.getInputStream(), clientSocket.getOutputStream()));
+                    Thread backendToClient = new Thread(() -> {
+                        try {
+                            new StreamPipe(backendSocket.getInputStream(), clientSocket.getOutputStream()).run();
+                        } catch (IOException e) {
+                        } finally {
+                            try { clientSocket.close(); } catch (IOException e) {}
+                        }
+                    });
 
                     clientToBackend.start();
                     backendToClient.start();
