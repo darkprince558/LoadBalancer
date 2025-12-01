@@ -35,6 +35,7 @@ public class Config {
     }
 
 
-
-
+    public static int getStatsMonitorInterval() {
+        return Integer.parseInt(properties.getProperty("stats.monitor.interval", "5000"));
+    }
 }

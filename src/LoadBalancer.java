@@ -12,6 +12,8 @@ public class LoadBalancer {
 
         startHealthCheck(registry, host);
 
+        startStatsMonitor(registry);
+
         System.out.println("Load Balancer started on port " + port);
 
         try (ServerSocket serverSocket = new ServerSocket(port)) {
@@ -67,6 +69,21 @@ public class LoadBalancer {
                 }
             }
         }).start();
+    }
+
+    private static void startStatsMonitor(BackendRegistry registry) {
+        Thread monitor = new Thread(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(Config.getStatsMonitorInterval());
+                    System.out.println(registry.getTotalLoad());
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        monitor.setDaemon(true);
+        monitor.start();
     }
 
     private static boolean isServerAlive(String host, int port) {

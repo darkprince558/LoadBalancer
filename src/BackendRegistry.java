@@ -13,10 +13,7 @@ public class BackendRegistry {
         this.allBackendPorts = ports;
         this.liveServers = new Vector<>(ports);
         this.serverLoad = new ConcurrentHashMap<>();
-
-        for (int port : ports) {
-            serverLoad.put(port, new AtomicInteger(0));
-        }
+        for (int port : ports) serverLoad.put(port, new AtomicInteger(0));
     }
 
     //Least Connections)
@@ -61,7 +58,20 @@ public class BackendRegistry {
         if (!liveServers.contains(port)) {
             liveServers.add(port);
             serverLoad.put(port, new AtomicInteger(0)); // Reset load on revive
-            System.out.println(">>> Server " + port + " is UP!");
+            System.out.println(">>> Server " + port + " is UP.");
         }
     }
+
+    public String getTotalLoad() {
+        StringBuilder stats = new StringBuilder("STATUS REPORT: ");
+
+        for (Integer port : allBackendPorts) {
+            int count = serverLoad.get(port).get();
+            stats.append("[Port ").append(port).append(": ").append(count).append(" users]  ");
+        }
+        return stats.toString();
+    }
+
+
+
 }
