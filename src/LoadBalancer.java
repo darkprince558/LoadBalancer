@@ -15,50 +15,56 @@ public class LoadBalancer {
         BackendRegistry registry = new BackendRegistry(Config.getBackendPorts());
         startHealthCheck(registry, host);
         startStatsMonitor(registry);
-
-        log("INFO", "Load Balancer engine starting on port " + port);
-        log("INFO", "Strategy: Least Connections");
+        printInitialInfo(port);
 
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             while (true) {
-                Socket clientSocket = serverSocket.accept();
-
                 try {
-                    int backendPort = registry.getBestServer();
-                    Socket backendSocket = new Socket(host, backendPort);
-
-                    registry.incrementLoad(backendPort);
-                    log("TRAFFIC", "Routed Client -> Backend:" + backendPort);
-
-                    Thread clientToBackend = new Thread(() -> {
-                        try {
-                            new StreamPipe(clientSocket.getInputStream(), backendSocket.getOutputStream()).run();
-                        } catch (IOException e) {
-                        } finally {
-                            registry.decrementLoad(backendPort);
-                            log("TRAFFIC", "Closed Session -> Backend:" + backendPort);
-                            closeQuietly(backendSocket);
-                        }
-                    });
-
-                    Thread backendToClient = new Thread(() -> {
-                        try {
-                            new StreamPipe(backendSocket.getInputStream(), clientSocket.getOutputStream()).run();
-                        } catch (IOException e) {
-                        } finally {
-                            closeQuietly(clientSocket);
-                        }
-                    });
-
-                    clientToBackend.start();
-                    backendToClient.start();
-
-                } catch (Exception e) {
-                    log("ERROR", "Routing failed: " + e.getMessage());
-                    clientSocket.close();
+                    Socket clientSocket = serverSocket.accept();
+                    handleSession(clientSocket, registry, host);
+                } catch (IOException e) {
+                    log("ERROR", "Accept failed: " + e.getMessage());
                 }
             }
         }
+    }
+
+    private static void printInitialInfo(int port) {
+        log("INFO", "Load Balancer engine starting on port " + port);
+        log("INFO", "Health Check: Active every " + Config.getHealthCheckInterval() + "ms");
+        log("INFO", "Reports: Printing every " + Config.getStatsMonitorInterval() + "ms");
+    }
+
+    private static void handleSession(Socket clientSocket, BackendRegistry registry, String backendHost) {
+        try {
+            int backendPort = registry.getBestServer();
+            Socket backendSocket = new Socket(backendHost, backendPort);
+
+            registry.incrementLoad(backendPort);
+            log("TRAFFIC", "Routed Client -> Backend:" + backendPort);
+
+            startPipe(backendSocket, clientSocket, () -> {registry.decrementLoad(backendPort); log("TRAFFIC", "Closed Session -> Backend:" + backendPort); });
+            startPipe(clientSocket, backendSocket, null);
+
+
+        } catch (Exception e) {
+            log("ERROR", "Routing failed: " + e.getMessage());
+            closeQuietly(clientSocket);
+        }
+    }
+
+    private static void startPipe (Socket inputSocket, Socket outputSocket, Runnable task) {
+        new Thread(() -> {
+            try {
+                new StreamPipe(inputSocket.getInputStream(), outputSocket.getOutputStream()).run();
+            } catch (IOException e) {
+                log("ERROR", "Pipe failed: " + e.getMessage());
+            } finally {
+                if (task != null) task.run();
+                closeQuietly(inputSocket);
+                closeQuietly(outputSocket);
+            }
+        }).start();
     }
 
     public static void log(String level, String message) {
@@ -66,7 +72,7 @@ public class LoadBalancer {
     }
 
     private static void closeQuietly(Socket s) {
-        try { if (s != null) s.close(); } catch (IOException e) {}
+        try { if (s != null) s.close(); } catch (IOException _) {}
     }
 
     private static void startStatsMonitor(BackendRegistry registry) {
@@ -77,7 +83,7 @@ public class LoadBalancer {
 
                     System.out.println("\n");
                     System.out.println("==================================================");
-                    System.out.println("                SYSTEM REPORT                     ");
+                    System.out.println("                    SYSTEM REPORT                 ");
                     System.out.println("==================================================");
                     System.out.printf("| %-10s | %-10s | %-18s |%n", "PORT", "STATUS", "CONNECTIONS");
                     System.out.println("--------------------------------------------------");
@@ -102,11 +108,8 @@ public class LoadBalancer {
                 try {
                     Thread.sleep(Config.getHealthCheckInterval());
                     for (int port : registry.getAllPorts()) {
-                        if (isServerAlive(host, port)) {
-                            registry.markServerUp(port);
-                        } else {
-                            registry.markServerDown(port);
-                        }
+                        if (isServerAlive(host, port)) registry.markServerUp(port);
+                        else registry.markServerDown(port);
                     }
                 } catch (InterruptedException e) { e.printStackTrace(); }
             }
