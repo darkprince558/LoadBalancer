@@ -1,6 +1,5 @@
 import java.util.List;
 import java.util.Vector;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -30,7 +29,7 @@ public class BackendRegistry {
                 selectedPort = port;
             }
         }
-        return (selectedPort != -1) ? selectedPort : liveServers.get(0);
+        return (selectedPort != -1) ? selectedPort : liveServers.getFirst();
     }
 
     public void incrementLoad(int port) {

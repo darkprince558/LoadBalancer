@@ -20,8 +20,7 @@ public class StreamPipe implements Runnable {
                 output.write(buffer, 0, bytesRead);
                 output.flush();
             }
-        } catch (IOException e) {
-            System.out.println("Stream closed.");
+        } catch (IOException _) {
         }
     }
 }
